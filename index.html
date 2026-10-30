@@ -1,0 +1,1791 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controle de Ordem de Compras</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome para ícones profissionais -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Firebase SDK Compat (Necessário para Tempo Real) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    
+    <style>
+        :root {
+            --primary: #0f2d5c; /* Azul-marinho corporativo */
+            --primary-light: #1e4a8c;
+            --secondary: #0077b6; /* Azul-petróleo interativo */
+            --secondary-hover: #005f93;
+            --bg-color: #f4f7f6;
+            --card-bg: #ffffff;
+            --text-main: #2b3a4a;
+            --text-muted: #6c757d;
+            --border-color: #d1d8e0;
+            --success: #2e7d32; /* Verde discreto */
+            --success-bg: #e8f5e9;
+            --danger: #c62828; /* Vermelho suave */
+            --danger-bg: #ffebee;
+            --warning: #ef6c00;
+            --radius: 10px;
+            --shadow: 0 4px 12px rgba(15, 45, 92, 0.08);
+            --transition: all 0.25s ease;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+            width: 100vw;
+        }
+
+        /* Notificações Flutuantes */
+        #toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: calc(100vw - 40px);
+        }
+
+        .toast {
+            background: #fff;
+            color: var(--text-main);
+            padding: 12px 20px;
+            border-radius: var(--radius);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+            border-left: 5px solid var(--secondary);
+            font-size: 13px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
+            word-break: break-word;
+        }
+
+        .toast.success { border-left-color: var(--success); background: var(--success-bg); color: #1b5e20; }
+        .toast.error { border-left-color: var(--danger); background: var(--danger-bg); color: #b71c1c; }
+        .toast.warning { border-left-color: var(--warning); background: #fff3e0; color: #e65100; }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; visibility: hidden; }
+        }
+
+        /* Modal de Confirmação Personalizado */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 45, 92, 0.6);
+            backdrop-filter: blur(3px);
+            z-index: 9998;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            visibility: hidden;
+            transition: var(--transition);
+            padding: 16px;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal-card {
+            background: #fff;
+            width: 100%;
+            max-width: 400px;
+            border-radius: var(--radius);
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transform: translateY(20px);
+            transition: var(--transition);
+        }
+
+        .modal-overlay.active .modal-card {
+            transform: translateY(0);
+        }
+
+        .modal-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--primary);
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .modal-body {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 20px;
+            word-break: break-word;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .rec-oc-wrap { display:flex; align-items:center; gap:5px; min-width:0; }
+        .rec-oc-wrap .rec-ordem { flex:1; min-width:0; }
+        .rec-note-btn { flex:0 0 34px; width:34px; height:34px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; color:#475569; cursor:pointer; }
+        .rec-note-btn:hover { background:#e2e8f0; }
+        .rec-oc-cell.has-observation { background:#fff3cd; box-shadow:inset 0 0 0 2px #e0a800; }
+        .rec-oc-cell.has-observation .rec-note-btn { background:#ffe08a; border-color:#d39e00; color:#694d00; }
+        .observation-textarea { width:100%; min-height:130px; resize:vertical; padding:10px; border:1px solid var(--border-color); border-radius:8px; font:inherit; font-size:14px; }
+
+        /* Header Corporativo */
+        header {
+            background-color: var(--primary);
+            color: #fff;
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            width: 100%;
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+        }
+
+        .header-brand i {
+            font-size: 20px;
+            color: #64b5f6;
+            flex-shrink: 0;
+        }
+
+        .header-brand h1 {
+            font-size: 16px;
+            font-weight: 600;
+            letter-spacing: -0.3px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .header-badge {
+            background: rgba(255, 255, 255, 0.12);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid rgba(255,255,255,0.2);
+            flex-shrink: 0;
+        }
+
+        .header-badge.online {
+            background: rgba(46, 125, 50, 0.25);
+            border-color: #4caf50;
+            color: #a5d6a7;
+        }
+
+        /* Container Principal */
+        .container {
+            max-width: 1200px;
+            margin: 16px auto;
+            padding: 0 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            width: 100%;
+        }
+
+        /* Hero Section */
+        .hero-section {
+            position: relative;
+            border-radius: var(--radius);
+            overflow: hidden;
+            box-shadow: var(--shadow);
+            height: 200px;
+            display: flex;
+            align-items: center;
+            background-color: var(--primary);
+            width: 100%;
+        }
+
+        .hero-bg {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-image: url('https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=1600&q=80');
+            background-size: cover;
+            background-position: center;
+            opacity: 0.35;
+        }
+
+        .hero-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(90deg, rgba(15,45,92,0.95) 0%, rgba(15,45,92,0.7) 60%, rgba(15,45,92,0.4) 100%);
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 2;
+            padding: 24px;
+            color: #fff;
+            max-width: 700px;
+            width: 100%;
+        }
+
+        .hero-content h2 {
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            letter-spacing: -0.5px;
+        }
+
+        .hero-content p {
+            font-size: 13px;
+            color: #e2e8f0;
+            font-weight: 300;
+            line-height: 1.4;
+        }
+
+        /* Módulos e Cartões */
+        .card-module {
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            margin-bottom: 16px;
+            width: 100%;
+        }
+
+        .module-header {
+            background-color: #fff;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .module-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .module-title i {
+            color: var(--secondary);
+        }
+
+        .module-body {
+            padding: 16px;
+            width: 100%;
+        }
+
+        /* Campo de Data Compacto e Responsivo */
+        .date-control-group {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 16px;
+            background: #f8fafc;
+            padding: 10px 14px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border-color);
+            max-width: 100%;
+        }
+
+        .date-control-group label {
+            font-weight: 600;
+            font-size: 12px;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .date-control-group input[type="date"] {
+            padding: 6px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 13px;
+            color: var(--text-main);
+            background: #fff;
+            outline: none;
+            transition: var(--transition);
+            max-width: 200px;
+        }
+
+        .date-control-group input[type="date"]:focus {
+            border-color: var(--secondary);
+            box-shadow: 0 0 0 3px rgba(0, 119, 182, 0.15);
+        }
+
+        /* Tabelas Ajustadas para Conter na Tela sem Transbordamento Horizontal Geral */
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            margin-bottom: 16px;
+            background: #fff;
+            max-height: 450px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 13px;
+            background: #fff;
+            min-width: 550px;
+        }
+
+        th {
+            background-color: var(--primary);
+            color: #fff;
+            padding: 10px 12px;
+            font-weight: 600;
+            font-size: 12px;
+            letter-spacing: 0.3px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        td {
+            padding: 6px 10px;
+            border-bottom: 1px solid #edf2f7;
+            color: var(--text-main);
+            vertical-align: middle;
+        }
+
+        tbody tr:hover {
+            background-color: #f8fafc;
+        }
+
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .row-index {
+            width: 40px;
+            text-align: center;
+            font-weight: 600;
+            color: var(--text-muted);
+            background: #f8fafc;
+            border-right: 1px solid #edf2f7;
+        }
+
+        /* Células Editáveis Estilizadas */
+        .editable-cell {
+            width: 100%;
+            border: 1px solid transparent;
+            background: transparent;
+            padding: 5px 8px;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 13px;
+            color: var(--text-main);
+            outline: none;
+            transition: var(--transition);
+        }
+
+        .editable-cell:hover {
+            background: #f1f5f9;
+            border-color: #cbd5e1;
+        }
+
+        .editable-cell:focus {
+            background: #fff;
+            border-color: var(--secondary);
+            box-shadow: 0 0 0 3px rgba(0, 119, 182, 0.12);
+        }
+
+        /* Botões de Ação Adaptáveis */
+        .action-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+            width: 100%;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: var(--transition);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            text-decoration: none;
+            flex: 1;
+            min-width: 130px;
+        }
+
+        .btn-primary {
+            background-color: var(--secondary);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background-color: var(--secondary-hover);
+            transform: translateY(-1px);
+        }
+
+        .btn-success {
+            background-color: var(--success);
+            color: #fff;
+        }
+
+        .btn-success:hover {
+            background-color: #1b5e20;
+            transform: translateY(-1px);
+        }
+
+        .btn-outline {
+            background-color: #fff;
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-outline:hover {
+            background-color: #f1f5f9;
+            border-color: #cbd5e1;
+        }
+
+        .btn-danger-outline {
+            background-color: #fff;
+            color: var(--danger);
+            border: 1px solid #ffcdd2;
+        }
+
+        .btn-danger-outline:hover {
+            background-color: var(--danger-bg);
+        }
+
+        .btn-sm {
+            padding: 5px 10px;
+            font-size: 11px;
+            border-radius: 6px;
+            min-width: auto;
+            flex: unset;
+        }
+
+        /* Seção de Histórico */
+        .history-section {
+            margin-top: 20px;
+            border-top: 1px dashed var(--border-color);
+            padding-top: 16px;
+            width: 100%;
+        }
+
+        .history-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--primary);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 250px;
+            overflow-y: auto;
+            padding-right: 2px;
+            width: 100%;
+        }
+
+        .history-item {
+            background: #f8fafc;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            transition: var(--transition);
+            width: 100%;
+        }
+
+        .history-item:hover {
+            border-color: var(--secondary);
+            background: #fff;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+        }
+
+        .history-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+            flex: 1;
+        }
+
+        .history-date {
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .history-meta {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .history-actions {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .empty-history {
+            text-align: center;
+            padding: 16px;
+            color: var(--text-muted);
+            font-style: italic;
+            font-size: 12px;
+            background: #f8fafc;
+            border-radius: 8px;
+            border: 1px dashed var(--border-color);
+            width: 100%;
+        }
+
+        /* Rodapé */
+        footer {
+            text-align: center;
+            padding: 16px;
+            color: var(--text-muted);
+            font-size: 11px;
+            border-top: 1px solid var(--border-color);
+            margin-top: 24px;
+            background: #fff;
+            width: 100%;
+        }
+
+        /* Estilos de Impressão Específicos */
+        @media print {
+            body {
+                background: #fff;
+                color: #000;
+                width: 100% !important;
+                overflow: visible !important;
+            }
+            header, .hero-section, .action-bar, .history-section, #toast-container, .modal-overlay, .no-print {
+                display: none !important;
+            }
+            .container {
+                max-width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            .card-module {
+                box-shadow: none !important;
+                border: none !important;
+                margin: 0 !important;
+            }
+            .module-header {
+                border-bottom: 2px solid #000 !important;
+                padding: 8px 0 !important;
+            }
+            .module-body {
+                padding: 8px 0 !important;
+            }
+            .table-responsive {
+                max-height: none !important;
+                overflow: visible !important;
+                border: 1px solid #000 !important;
+            }
+            table {
+                font-size: 11px !important;
+                min-width: 100% !important;
+            }
+            th {
+                background-color: #ddd !important;
+                color: #000 !important;
+                border: 1px solid #000 !important;
+            }
+            td {
+                border: 1px solid #ccc !important;
+                padding: 4px 6px !important;
+            }
+            .editable-cell {
+                border: none !important;
+                background: transparent !important;
+                padding: 0 !important;
+            }
+            .print-header-info {
+                display: block !important;
+                margin-bottom: 10px;
+                font-size: 13px;
+                font-weight: bold;
+            }
+        }
+
+        .print-header-info {
+            display: none;
+        }
+
+        /* Responsividade Extrema para Dispositivos Móveis e Ajuste Fino de Layout */
+        @media (max-width: 600px) {
+            .container {
+                padding: 0 8px;
+                gap: 16px;
+                margin: 8px auto;
+            }
+            .module-header {
+                padding: 12px 14px;
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 6px;
+            }
+            .module-body {
+                padding: 12px 14px;
+            }
+            .action-bar {
+                flex-direction: column;
+            }
+            .btn {
+                width: 100%;
+                flex: unset;
+            }
+            .history-item {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+            .history-actions {
+                width: 100%;
+                justify-content: flex-end;
+            }
+            .hero-content {
+                padding: 16px;
+            }
+            .hero-content h2 {
+                font-size: 18px;
+            }
+            .hero-content p {
+                font-size: 12px;
+            }
+            .hero-section {
+                height: 170px;
+            }
+        }
+
+        /* Tela de autenticação */
+        body.auth-locked > *:not(#auth-screen):not(script) { display: none !important; }
+        #auth-screen { display:none; position:fixed; inset:0; z-index:20000; background:var(--bg-color); padding:22px; align-items:center; justify-content:center; }
+        body.auth-locked #auth-screen { display:flex; }
+        .auth-card { width:100%; max-width:390px; background:#fff; border:1px solid var(--border-color); border-radius:14px; padding:26px; box-shadow:var(--shadow); }
+        .auth-card h2 { color:var(--primary); font-size:22px; margin-bottom:8px; }
+        .auth-card p { color:var(--text-muted); font-size:13px; margin-bottom:18px; }
+        .auth-card .auth-subtitle { color:var(--text-main); font-size:17px; margin:0 0 8px; font-weight:700; }
+        .auth-card label { display:block; font-size:13px; font-weight:600; margin:12px 0 5px; }
+        .auth-card input { width:100%; padding:12px; border:1px solid var(--border-color); border-radius:8px; font:inherit; }
+        .auth-card button { width:100%; margin-top:16px; padding:12px; border:0; border-radius:8px; color:white; background:var(--success); font:600 14px inherit; cursor:pointer; }
+        #auth-error { display:none; color:#b71c1c; background:#ffebee; border-radius:7px; padding:10px; margin-top:12px; font-size:12px; overflow-wrap:anywhere; }
+        #btn-logout { margin-left:8px; padding:5px 9px; border:1px solid rgba(255,255,255,.35); border-radius:6px; background:transparent; color:#fff; font-size:11px; cursor:pointer; }
+    
+        /* Confirmação de avisos por linha */
+        .lem-check-cell { text-align:center; width:86px; min-width:86px; }
+        .lem-confirm-check {
+            appearance:none; -webkit-appearance:none;
+            box-sizing:border-box; flex:0 0 25px;
+            width:25px !important; min-width:25px; height:25px !important;
+            margin:0 auto; padding:0;
+            border:2px solid #7b8794; border-radius:6px;
+            background:#fff; display:inline-flex; align-items:center; justify-content:center;
+            cursor:pointer; vertical-align:middle; transition:all .15s ease;
+            opacity:1; position:relative;
+        }
+        .lem-confirm-check:checked { background:#16803c; border-color:#16803c; }
+        .lem-confirm-check:checked::after {
+            content:'✓'; color:#fff; font-size:19px; line-height:1; font-weight:800;
+        }
+        .lem-confirm-check:focus-visible { outline:3px solid rgba(22,128,60,.25); outline-offset:2px; }
+        @media print { .lem-check-cell { width:70px; } .lem-confirm-check { print-color-adjust:exact; -webkit-print-color-adjust:exact; } }
+
+    </style>
+</head>
+<body class="auth-locked">
+    <section id="auth-screen" aria-label="Login">
+        <form class="auth-card" id="auth-form" autocomplete="off">
+            <h2><i class="fa-solid fa-lock"></i> Acesso ao Sistema</h2>
+            <h3 class="auth-subtitle">Recebimento/Compras</h3>
+            <p>entre com e-mail e senha cadastrados</p>
+            <label for="auth-email">E-mail</label>
+            <input id="auth-email" type="email" autocomplete="off" required placeholder="seu@email.com">
+            <label for="auth-password">Senha</label>
+            <input id="auth-password" type="password" autocomplete="new-password" required placeholder="Digite sua senha">
+            <button id="auth-submit" type="submit">Entrar</button>
+            <div id="auth-error" role="alert"></div>
+        </form>
+    </section>
+
+    <!-- Contêiner de Notificações -->
+    <div id="toast-container"></div>
+
+    <!-- Modal de Confirmação -->
+    <div class="modal-overlay" id="observation-modal" role="dialog" aria-modal="true" aria-labelledby="observation-modal-title">
+        <div class="modal-card">
+            <div class="modal-title" id="observation-modal-title"><i class="fa-regular fa-note-sticky"></i> Observação da Ordem de Compras</div>
+            <div class="modal-body">
+                <label for="observation-text" style="display:block;margin-bottom:8px;color:var(--text-main);font-weight:600">Digite a observação:</label>
+                <textarea id="observation-text" class="observation-textarea" placeholder="Escreva aqui uma observação sobre esta ordem de compras..."></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline btn-sm" id="observation-cancel-btn" type="button">Cancelar</button>
+                <button class="btn btn-primary btn-sm" id="observation-save-btn" type="button"><i class="fa-solid fa-check"></i> Salvar observação</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="confirm-modal">
+        <div class="modal-card">
+            <div class="modal-title" id="modal-title-text"><i class="fa-solid fa-triangle-exclamation" style="color: var(--warning);"></i> Confirmação</div>
+            <div class="modal-body" id="modal-message-text">Deseja realmente executar esta ação?</div>
+            <div class="modal-footer">
+                <button class="btn btn-outline btn-sm" id="modal-cancel-btn">Cancelar</button>
+                <button class="btn btn-primary btn-sm" id="modal-confirm-btn">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cabeçalho do Aplicativo -->
+    <header>
+        <div class="header-brand">
+            <i class="fa-solid fa-hospital-user"></i>
+            <h1>Controle de Ordem de Compras</h1>
+        </div>
+        <div class="header-badge" id="sync-status-badge" title="Status de Sincronização">
+            <i class="fa-solid fa-database"></i>
+            <span id="sync-status-text">Modo Local</span>
+        </div>
+    </header>
+
+    <!-- Conteúdo Principal -->
+    <div class="container">
+
+        <!-- Hero Section -->
+        <section class="hero-section">
+            <div class="hero-bg"></div>
+            <div class="hero-overlay"></div>
+            <div class="hero-content">
+                <h2>Controle de Ordem de Compras</h2>
+                <p>Organize o recebimento de medicamentos e acompanhe suas ordens de compras em tempo real com total segurança e sincronização entre dispositivos.</p>
+            </div>
+        </section>
+
+        <!-- MÓDULO 1: RECEBIMENTO DE MEDICAMENTOS -->
+        <div class="card-module" id="module-recebimento">
+            <div class="module-header">
+                <div class="module-title">
+                    <i class="fa-solid fa-pills"></i> Recebimento de Medicamentos
+                </div>
+                <div style="font-size: 11px; color: var(--text-muted); font-weight: 500;">
+                    Módulo Ativo
+                </div>
+            </div>
+            <div class="module-body">
+                
+                <div class="print-header-info" id="print-rec-header"></div>
+
+                <!-- Campo de Data -->
+                <div class="date-control-group no-print">
+                    <label for="rec-date"><i class="fa-regular fa-calendar-days"></i> Data do recebimento:</label>
+                    <input type="date" id="rec-date">
+                </div>
+
+                <!-- Tabela de Recebimento (20 Linhas) -->
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th class="row-index">#</th>
+                                <th>Fornecedor</th>
+                                <th>Ordem de Compras (OC)</th>
+                                <th>Responsável</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rec-table-body">
+                            <!-- Preenchido via JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Botões de Ação do Recebimento -->
+                <div class="action-bar no-print">
+                    <button class="btn btn-success" id="btn-save-rec">
+                        <i class="fa-solid fa-floppy-disk"></i> Salvar recebimento
+                    </button>
+                    <button class="btn btn-primary" id="btn-new-rec">
+                        <i class="fa-solid fa-file-circle-plus"></i> Novo recebimento
+                    </button>
+                    <button class="btn btn-outline" id="btn-clear-rec">
+                        <i class="fa-solid fa-eraser"></i> Limpar campos
+                    </button>
+                    <button class="btn btn-outline" id="btn-print-rec">
+                        <i class="fa-solid fa-print"></i> Imprimir recebimento
+                    </button>
+                </div>
+
+                <!-- Histórico de Recebimentos -->
+                <div class="history-section no-print">
+                    <div class="history-title">
+                        <i class="fa-solid fa-clock-rotate-left"></i> Histórico de Recebimentos Salvos
+                    </div>
+                    <div id="rec-history-list" class="history-list">
+                        <!-- Preenchido via JavaScript -->
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- MÓDULO 2: GERENCIAMENTO DE AVISOS -->
+        <div class="card-module" id="module-lembrete">
+            <div class="module-header">
+                <div class="module-title">
+                    <i class="fa-solid fa-bell"></i> Gerenciamento de Avisos
+                </div>
+                <div style="font-size: 11px; color: var(--text-muted); font-weight: 500;">
+                    Controle de Avisos
+                </div>
+            </div>
+            <div class="module-body">
+
+                <div class="print-header-info" id="print-lem-header"></div>
+
+                <!-- Campo de Data para Gerenciamento de Avisos -->
+                <div class="date-control-group no-print">
+                    <label for="lem-date"><i class="fa-regular fa-calendar-days"></i> Data do aviso:</label>
+                    <input type="date" id="lem-date">
+                </div>
+
+                <!-- Tabela de Lembretes / Avisos (10 Linhas) -->
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th class="row-index">#</th>
+                                <th class="lem-check-cell">Confirmado</th>
+                                <th>Fornecedor</th>
+                                <th>Avisar (Contato / Responsável)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="lem-table-body">
+                            <!-- Preenchido via JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Botões de Ação dos Avisos -->
+                <div class="action-bar no-print">
+                    <button class="btn btn-success" id="btn-save-lem">
+                        <i class="fa-solid fa-floppy-disk"></i> Salvar avisos
+                    </button>
+                    <button class="btn btn-primary" id="btn-new-lem">
+                        <i class="fa-solid fa-file-circle-plus"></i> Novo aviso
+                    </button>
+                    <button class="btn btn-outline" id="btn-clear-lem">
+                        <i class="fa-solid fa-eraser"></i> Limpar campos
+                    </button>
+                    <button class="btn btn-outline" id="btn-print-lem">
+                        <i class="fa-solid fa-print"></i> Imprimir avisos
+                    </button>
+                </div>
+
+                <!-- Histórico de Avisos -->
+                <div class="history-section no-print">
+                    <div class="history-title">
+                        <i class="fa-solid fa-clock-rotate-left"></i> Histórico de Avisos Salvos
+                    </div>
+                    <div id="lem-history-list" class="history-list">
+                        <!-- Preenchido via JavaScript -->
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Rodapé -->
+    <footer>
+        <p>Controle de Ordem de Compras &copy; 2026 — Sistema de Gestão de Recebimento Farmacêutico</p>
+        <p style="margin-top: 2px; font-size: 10px;">Sincronização em tempo real via Firebase Realtime Database.</p>
+    </footer>
+
+    <!-- JavaScript com Integração Firebase Realtime Database -->
+    <script>
+        // =========================================================================
+        // CONFIGURAÇÃO DO FIREBASE (CONFIGURADO COM AS SUAS CHAVES REAIS)
+        // =========================================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyCQu8c-Z4Pf40dGyc5TmXGnD1Z8dTe4LYc",
+            authDomain: "controle-ordem-compras.firebaseapp.com",
+            databaseURL: "https://controle-ordem-compras-default-rtdb.firebaseio.com",
+            projectId: "controle-ordem-compras",
+            storageBucket: "controle-ordem-compras.firebasestorage.app",
+            messagingSenderId: "456994741751",
+            appId: "1:456994741751:web:2826b296bbab5956f362f2"
+        };
+
+        let db = null;
+        let auth = null;
+        let isFirebaseActive = false;
+
+        if (firebaseConfig.apiKey) {
+            try {
+                firebase.initializeApp(firebaseConfig);
+                db = firebase.database();
+                auth = firebase.auth();
+                isFirebaseActive = true;
+                console.log("Firebase conectado com sucesso!");
+            } catch (e) {
+                console.error("Erro ao inicializar Firebase:", e);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+
+            const badgeEl = document.getElementById('sync-status-badge');
+            const badgeText = document.getElementById('sync-status-text');
+            if (isFirebaseActive) {
+                badgeEl.className = "header-badge online";
+                badgeText.textContent = "Tempo Real (Online)";
+                badgeEl.title = "Conectado ao Firebase Realtime Database";
+            } else {
+                badgeText.textContent = "Modo Local (LocalStorage)";
+                badgeEl.title = "Configure o Firebase para sincronização em tempo real";
+            }
+
+            const STORAGE_REC_KEY = 'coc_recebimentos_v1';
+            const STORAGE_LEM_KEY = 'coc_lembretes_v1';
+
+            let currentRecId = null; 
+            let currentLemId = null; 
+
+            let cachedRecebimentos = [];
+            let cachedLembretes = [];
+
+            // --- FUNÇÃO DE NOTIFICAÇÃO (TOAST) ---
+            function showToast(message, type = 'success') {
+                const container = document.getElementById('toast-container');
+                const toast = document.createElement('div');
+                toast.className = `toast ${type}`;
+                
+                let icon = 'fa-circle-check';
+                if (type === 'error') icon = 'fa-circle-exclamation';
+                if (type === 'warning') icon = 'fa-triangle-exclamation';
+
+                toast.innerHTML = `<i class="fa-solid ${icon}"></i> <span>${message}</span>`;
+                container.appendChild(toast);
+
+                setTimeout(() => { toast.remove(); }, 3000);
+            }
+
+            // --- SISTEMA DE MODAL DE CONFIRMAÇÃO ---
+            function openConfirmModal(title, message, onConfirm) {
+                const modal = document.getElementById('confirm-modal');
+                const titleEl = document.getElementById('modal-title-text');
+                const msgEl = document.getElementById('modal-message-text');
+                const confirmBtn = document.getElementById('modal-confirm-btn');
+                const cancelBtn = document.getElementById('modal-cancel-btn');
+
+                titleEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color: var(--warning);"></i> ${title}`;
+                msgEl.textContent = message;
+                modal.classList.add('active');
+
+                const newConfirmBtn = confirmBtn.cloneNode(true);
+                const newCancelBtn = cancelBtn.cloneNode(true);
+                confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+                cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+
+                newConfirmBtn.addEventListener('click', () => {
+                    modal.classList.remove('active');
+                    onConfirm();
+                });
+
+                newCancelBtn.addEventListener('click', () => { modal.classList.remove('active'); });
+
+                modal.onclick = (e) => {
+                    if (e.target === modal) modal.classList.remove('active');
+                };
+            }
+
+            // --- INICIALIZAÇÃO DA TABELA DE RECEBIMENTO (20 LINHAS) ---
+            const recTableBody = document.getElementById('rec-table-body');
+            function initRecTable(data = []) {
+                recTableBody.innerHTML = '';
+                const totalRows = Math.max(20, data.length);
+                for (let i = 0; i < totalRows; i++) {
+                    const rowData = data[i] || { fornecedor: '', ordem: '', responsavel: '', observacao: '' };
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="row-index">${i + 1}</td>
+                        <td><input type="text" class="editable-cell rec-fornecedor" value="${escapeHtml(rowData.fornecedor)}" placeholder="Digite o fornecedor..."></td>
+                        <td class="rec-oc-cell ${rowData.observacao ? 'has-observation' : ''}">
+                            <div class="rec-oc-wrap">
+                                <input type="text" class="editable-cell rec-ordem" value="${escapeHtml(rowData.ordem)}" placeholder="Ex: OC-2026-0158">
+                                <button type="button" class="rec-note-btn" title="${rowData.observacao ? 'Visualizar/editar observação' : 'Adicionar observação'}" aria-label="Observação da ordem de compras"><i class="fa-regular fa-note-sticky"></i></button>
+                            </div>
+                            <span class="rec-observation-data" hidden>${escapeHtml(rowData.observacao || '')}</span>
+                        </td>
+                        <td><input type="text" class="editable-cell rec-responsavel" value="${escapeHtml(rowData.responsavel)}" placeholder="Nome do responsável..."></td>
+                    `;
+                    recTableBody.appendChild(tr);
+                }
+            }
+
+            // --- INICIALIZAÇÃO DA TABELA DE AVISOS (10 LINHAS) ---
+            const lemTableBody = document.getElementById('lem-table-body');
+            function initLemTable(data = []) {
+                lemTableBody.innerHTML = '';
+                const totalRows = Math.max(10, data.length);
+                for (let i = 0; i < totalRows; i++) {
+                    const rowData = data[i] || { fornecedor: '', avisar: '', confirmado: false };
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="row-index">${i + 1}</td>
+                        <td class="lem-check-cell">
+                            <input type="checkbox" class="lem-confirm-check" aria-label="Marcar aviso da linha ${i + 1} como confirmado" ${rowData.confirmado ? 'checked' : ''}>
+                        </td>
+                        <td><input type="text" class="editable-cell lem-fornecedor" value="${escapeHtml(rowData.fornecedor)}" placeholder="Digite o fornecedor..."></td>
+                        <td><input type="text" class="editable-cell lem-avisar" value="${escapeHtml(rowData.avisar)}" placeholder="Quem deve ser avisado..."></td>
+                    `;
+                    lemTableBody.appendChild(tr);
+                }
+            }
+
+            // Acrescenta uma linha automaticamente quando todas as linhas atuais estiverem completas.
+            // Os dados extras também são mantidos ao salvar e ao carregar registros.
+            function updateRowNumbers(tbody) {
+                Array.from(tbody.querySelectorAll('tr')).forEach((row, index) => {
+                    const number = row.querySelector('.row-index');
+                    if (number) number.textContent = index + 1;
+                });
+            }
+
+            function recAllRowsFilled() {
+                const rows = Array.from(recTableBody.querySelectorAll('tr'));
+                return rows.length > 0 && rows.every(row =>
+                    row.querySelector('.rec-fornecedor').value.trim() &&
+                    row.querySelector('.rec-ordem').value.trim() &&
+                    row.querySelector('.rec-responsavel').value.trim()
+                );
+            }
+
+            function lemAllRowsFilled() {
+                const rows = Array.from(lemTableBody.querySelectorAll('tr'));
+                return rows.length > 0 && rows.every(row =>
+                    row.querySelector('.lem-fornecedor').value.trim() &&
+                    row.querySelector('.lem-avisar').value.trim()
+                );
+            }
+
+            function appendRecBlankRow() {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="row-index"></td>
+                    <td><input type="text" class="editable-cell rec-fornecedor" placeholder="Digite o fornecedor..."></td>
+                    <td class="rec-oc-cell">
+                        <div class="rec-oc-wrap">
+                            <input type="text" class="editable-cell rec-ordem" placeholder="Ex: OC-2026-0158">
+                            <button type="button" class="rec-note-btn" title="Adicionar observação" aria-label="Observação da ordem de compras"><i class="fa-regular fa-note-sticky"></i></button>
+                        </div>
+                        <span class="rec-observation-data" hidden></span>
+                    </td>
+                    <td><input type="text" class="editable-cell rec-responsavel" placeholder="Nome do responsável..."></td>`;
+                recTableBody.appendChild(tr);
+                updateRowNumbers(recTableBody);
+            }
+
+            function appendLemBlankRow() {
+                const tr = document.createElement('tr');
+                const n = lemTableBody.querySelectorAll('tr').length + 1;
+                tr.innerHTML = `
+                    <td class="row-index">${n}</td>
+                    <td class="lem-check-cell"><input type="checkbox" class="lem-confirm-check" aria-label="Marcar aviso da linha ${n} como confirmado"></td>
+                    <td><input type="text" class="editable-cell lem-fornecedor" placeholder="Digite o fornecedor..."></td>
+                    <td><input type="text" class="editable-cell lem-avisar" placeholder="Quem deve ser avisado..."></td>`;
+                lemTableBody.appendChild(tr);
+            }
+
+            recTableBody.addEventListener('input', () => {
+                if (recAllRowsFilled()) appendRecBlankRow();
+            });
+            lemTableBody.addEventListener('input', () => {
+                if (lemAllRowsFilled()) appendLemBlankRow();
+            });
+
+            function escapeHtml(str) {
+                if (!str) return '';
+                return str.replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            }
+
+            const recDateInput = document.getElementById('rec-date');
+            const lemDateInput = document.getElementById('lem-date');
+            function setDefaultDates() {
+                const today = new Date().toISOString().split('T')[0];
+                recDateInput.value = today;
+                lemDateInput.value = today;
+            }
+            setDefaultDates();
+
+            // --- BANCO DE DADOS (FIREBASE OU LOCALSTORAGE) ---
+            function fetchRecebimentosData(callback) {
+                if (isFirebaseActive) {
+                    db.ref('recebimentos').on('value', (snapshot) => {
+                        const val = snapshot.val();
+                        const list = val ? Object.keys(val).map(key => ({ id: key, ...val[key] })) : [];
+                        cachedRecebimentos = list;
+                        callback(list);
+                    });
+                } else {
+                    try {
+                        const data = localStorage.getItem(STORAGE_REC_KEY);
+                        cachedRecebimentos = data ? JSON.parse(data) : [];
+                    } catch (e) { cachedRecebimentos = []; }
+                    callback(cachedRecebimentos);
+                }
+            }
+
+            function saveRecebimentoRecord(recordData, recordId, callback) {
+                if (isFirebaseActive) {
+                    let ref;
+                    if (recordId) {
+                        ref = db.ref('recebimentos/' + recordId);
+                        ref.set(recordData).then(() => callback(true)).catch((error) => { console.error('Erro no Firebase:', error); callback(false, null, error); });
+                    } else {
+                        ref = db.ref('recebimentos').push();
+                        ref.set(recordData).then(() => callback(true, ref.key)).catch((error) => { console.error('Erro no Firebase:', error); callback(false, null, error); });
+                    }
+                } else {
+                    let list = [...cachedRecebimentos];
+                    if (recordId) {
+                        list = list.map(item => item.id === recordId ? { id: recordId, ...recordData } : item);
+                        callback(true, recordId);
+                    } else {
+                        const newId = 'rec_' + Date.now();
+                        list.push({ id: newId, ...recordData });
+                        callback(true, newId);
+                    }
+                    localStorage.setItem(STORAGE_REC_KEY, JSON.stringify(list));
+                    cachedRecebimentos = list;
+                    renderRecHistory(list);
+                }
+            }
+
+            function deleteRecebimentoRecord(recordId, callback) {
+                if (isFirebaseActive) {
+                    db.ref('recebimentos/' + recordId).remove().then(() => callback(true)).catch((error) => { console.error('Erro no Firebase:', error); callback(false, null, error); });
+                } else {
+                    let list = cachedRecebimentos.filter(r => r.id !== recordId);
+                    localStorage.setItem(STORAGE_REC_KEY, JSON.stringify(list));
+                    cachedRecebimentos = list;
+                    renderRecHistory(list);
+                    callback(true);
+                }
+            }
+
+            function fetchLembretesData(callback) {
+                if (isFirebaseActive) {
+                    db.ref('lembretes').on('value', (snapshot) => {
+                        const val = snapshot.val();
+                        const list = val ? Object.keys(val).map(key => ({ id: key, ...val[key] })) : [];
+                        cachedLembretes = list;
+                        callback(list);
+                    });
+                } else {
+                    try {
+                        const data = localStorage.getItem(STORAGE_LEM_KEY);
+                        cachedLembretes = data ? JSON.parse(data) : [];
+                    } catch (e) { cachedLembretes = []; }
+                    callback(cachedLembretes);
+                }
+            }
+
+            function saveLembreteRecord(recordData, recordId, callback) {
+                if (isFirebaseActive) {
+                    let ref;
+                    if (recordId) {
+                        ref = db.ref('lembretes/' + recordId);
+                        ref.set(recordData).then(() => callback(true)).catch((error) => { console.error('Erro no Firebase:', error); callback(false, null, error); });
+                    } else {
+                        ref = db.ref('lembretes').push();
+                        ref.set(recordData).then(() => callback(true, ref.key)).catch((error) => { console.error('Erro no Firebase:', error); callback(false, null, error); });
+                    }
+                } else {
+                    let list = [...cachedLembretes];
+                    if (recordId) {
+                        list = list.map(item => item.id === recordId ? { id: recordId, ...recordData } : item);
+                        callback(true, recordId);
+                    } else {
+                        const newId = 'lem_' + Date.now();
+                        list.push({ id: newId, ...recordData });
+                        callback(true, newId);
+                    }
+                    localStorage.setItem(STORAGE_LEM_KEY, JSON.stringify(list));
+                    cachedLembretes = list;
+                    renderLemHistory(list);
+                }
+            }
+
+            function deleteLembreteRecord(recordId, callback) {
+                if (isFirebaseActive) {
+                    db.ref('lembretes/' + recordId).remove().then(() => callback(true)).catch((error) => { console.error('Erro no Firebase:', error); callback(false, null, error); });
+                } else {
+                    let list = cachedLembretes.filter(r => r.id !== recordId);
+                    localStorage.setItem(STORAGE_LEM_KEY, JSON.stringify(list));
+                    cachedLembretes = list;
+                    renderLemHistory(list);
+                    callback(true);
+                }
+            }
+
+
+            // --- AÇÕES DO MÓDULO DE RECEBIMENTO ---
+            function collectRecFormData() {
+                const rows = recTableBody.querySelectorAll('tr');
+                const items = [];
+                let filledCount = 0;
+
+                rows.forEach(row => {
+                    const fornecedor = row.querySelector('.rec-fornecedor').value.trim();
+                    const ordem = row.querySelector('.rec-ordem').value.trim();
+                    const responsavel = row.querySelector('.rec-responsavel').value.trim();
+                    const observacao = row.querySelector('.rec-observation-data')?.textContent || '';
+
+                    if (fornecedor || ordem || responsavel || observacao.trim()) filledCount++;
+                    items.push({ fornecedor, ordem, responsavel, observacao });
+                });
+
+                return { items, filledCount };
+            }
+
+            // Janela de observação por linha da Ordem de Compras
+            const observationModal = document.getElementById('observation-modal');
+            const observationText = document.getElementById('observation-text');
+            let activeObservationCell = null;
+            recTableBody.addEventListener('click', (event) => {
+                const button = event.target.closest('.rec-note-btn');
+                if (!button) return;
+                activeObservationCell = button.closest('.rec-oc-cell');
+                const stored = activeObservationCell.querySelector('.rec-observation-data');
+                observationText.value = stored ? stored.textContent : '';
+                observationModal.classList.add('active');
+                observationText.focus();
+            });
+            document.getElementById('observation-save-btn').addEventListener('click', () => {
+                if (!activeObservationCell) return;
+                const text = observationText.value.trim();
+                const stored = activeObservationCell.querySelector('.rec-observation-data');
+                stored.textContent = text;
+                activeObservationCell.classList.toggle('has-observation', !!text);
+                const button = activeObservationCell.querySelector('.rec-note-btn');
+                button.title = text ? 'Visualizar/editar observação' : 'Adicionar observação';
+                observationModal.classList.remove('active');
+                activeObservationCell = null;
+            });
+            document.getElementById('observation-cancel-btn').addEventListener('click', () => {
+                observationModal.classList.remove('active');
+                activeObservationCell = null;
+            });
+            observationModal.addEventListener('click', (event) => {
+                if (event.target === observationModal) {
+                    observationModal.classList.remove('active');
+                    activeObservationCell = null;
+                }
+            });
+
+            document.getElementById('btn-save-rec').addEventListener('click', () => {
+                const dateVal = recDateInput.value;
+                if (!dateVal) {
+                    showToast("Por favor, selecione a data do recebimento.", "warning");
+                    recDateInput.focus();
+                    return;
+                }
+
+                const { items, filledCount } = collectRecFormData();
+                if (filledCount === 0) {
+                    showToast("Preencha ao menos uma linha na tabela de recebimento.", "warning");
+                    return;
+                }
+
+                const recordData = {
+                    date: dateVal,
+                    items,
+                    updatedAt: new Date().toISOString()
+                };
+
+                saveRecebimentoRecord(recordData, currentRecId, (success, newId, error) => {
+                    if (success) {
+                        if (newId) currentRecId = newId;
+                        showToast("Recebimento salvo com sucesso!", "success");
+                    } else {
+                        console.error("Falha ao salvar recebimento:", error);
+                        const detalhe = error && (error.code || error.message)
+                            ? ` (${error.code || error.message})`
+                            : "";
+                        showToast("Erro ao salvar recebimento" + detalhe, "error");
+                    }
+                });
+            });
+
+            document.getElementById('btn-new-rec').addEventListener('click', () => {
+                openConfirmModal(
+                    "Novo Recebimento",
+                    "Deseja iniciar um novo formulário?",
+                    () => {
+                        currentRecId = null;
+                        recDateInput.value = new Date().toISOString().split('T')[0];
+                        initRecTable();
+                        showToast("Formulário limpo para novo recebimento.", "success");
+                    }
+                );
+            });
+
+            document.getElementById('btn-clear-rec').addEventListener('click', () => {
+                openConfirmModal(
+                    "Limpar Campos",
+                    "Tem certeza que deseja apagar os dados preenchidos neste formulário?",
+                    () => {
+                        initRecTable();
+                        showToast("Campos limpos com sucesso.", "success");
+                    }
+                );
+            });
+
+            document.getElementById('btn-print-rec').addEventListener('click', () => {
+                const dateVal = recDateInput.value;
+                const formattedDate = dateVal ? dateVal.split('-').reverse().join('/') : 'Não informada';
+                document.getElementById('print-rec-header').innerHTML = `
+                    <strong>CONTROLE DE ORDEM DE COMPRAS - RECEBIMENTO DE MEDICAMENTOS</strong><br>
+                    Data do Recebimento: ${formattedDate}
+                `;
+                window.print();
+            });
+
+            function renderRecHistory(recList) {
+                const container = document.getElementById('rec-history-list');
+                if (!recList || recList.length === 0) {
+                    container.innerHTML = `<div class="empty-history">Nenhum recebimento salvo no histórico.</div>`;
+                    return;
+                }
+
+                container.innerHTML = '';
+                recList.slice().reverse().forEach(record => {
+                    const filledRows = record.items ? record.items.filter(i => i.fornecedor || i.ordem || i.responsavel).length : 0;
+                    const formattedDate = record.date ? record.date.split('-').reverse().join('/') : 'Data inválida';
+
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'history-item';
+                    itemDiv.innerHTML = `
+                        <div class="history-info">
+                            <div class="history-date"><i class="fa-regular fa-calendar"></i> ${formattedDate}</div>
+                            <div class="history-meta">${filledRows} registro(s) preenchido(s)</div>
+                        </div>
+                        <div class="history-actions">
+                            <button class="btn btn-outline btn-sm" title="Editar" onclick="loadRecebimento('${record.id}')">
+                                <i class="fa-solid fa-pen-to-square"></i> Editar
+                            </button>
+                            <button class="btn btn-danger-outline btn-sm" title="Excluir" onclick="confirmDeleteRecebimento('${record.id}')">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </div>
+                    `;
+                    container.appendChild(itemDiv);
+                });
+            }
+
+            window.loadRecebimento = function(id) {
+                const record = cachedRecebimentos.find(r => r.id === id);
+                if (!record) return;
+
+                currentRecId = record.id;
+                recDateInput.value = record.date || '';
+                initRecTable(record.items);
+                showToast("Recebimento carregado para edição.", "success");
+                document.getElementById('module-recebimento').scrollIntoView({ behavior: 'smooth' });
+            };
+
+            window.confirmDeleteRecebimento = function(id) {
+                openConfirmModal(
+                    "Excluir Registro",
+                    "Deseja realmente excluir este recebimento salvo?",
+                    () => {
+                        deleteRecebimentoRecord(id, (success) => {
+                            if (success) {
+                                if (currentRecId === id) {
+                                    currentRecId = null;
+                                    initRecTable();
+                                }
+                                showToast("Recebimento excluído com sucesso.", "success");
+                            } else {
+                                showToast("Erro ao excluir registro.", "error");
+                            }
+                        });
+                    }
+                );
+            };
+
+
+            // --- AÇÕES DO MÓDULO DE GERENCIAMENTO DE AVISOS ---
+            function collectLemFormData() {
+                const rows = lemTableBody.querySelectorAll('tr');
+                const items = [];
+                let filledCount = 0;
+
+                rows.forEach(row => {
+                    const fornecedor = row.querySelector('.lem-fornecedor').value.trim();
+                    const avisar = row.querySelector('.lem-avisar').value.trim();
+                    const confirmado = row.querySelector('.lem-confirm-check').checked;
+
+                    if (fornecedor || avisar) filledCount++;
+                    items.push({ fornecedor, avisar, confirmado });
+                });
+
+                return { items, filledCount };
+            }
+
+            document.getElementById('btn-save-lem').addEventListener('click', () => {
+                const dateVal = lemDateInput.value;
+                if (!dateVal) {
+                    showToast("Por favor, selecione a data do aviso.", "warning");
+                    lemDateInput.focus();
+                    return;
+                }
+
+                const { items, filledCount } = collectLemFormData();
+                if (filledCount === 0) {
+                    showToast("Preencha ao menos um aviso na tabela.", "warning");
+                    return;
+                }
+
+                const recordData = {
+                    date: dateVal,
+                    items,
+                    updatedAt: new Date().toISOString()
+                };
+
+                saveLembreteRecord(recordData, currentLemId, (success, newId, error) => {
+                    if (success) {
+                        if (newId) currentLemId = newId;
+
+                        // Atualiza o cache/histórico e mantém o formulário exibindo
+                        // exatamente o registro recém-salvo, inclusive data e linhas.
+                        if (isFirebaseActive) {
+                            fetchLembretesData((list) => {
+                                renderLemHistory(list);
+                                const savedId = currentLemId;
+                                const savedRecord = list.find(item => item.id === savedId);
+                                if (savedRecord) {
+                                    window.loadLembretes(savedRecord.id);
+                                }
+                            });
+                        } else {
+                            const savedRecord = cachedLembretes.find(item => item.id === currentLemId);
+                            if (savedRecord) window.loadLembretes(savedRecord.id);
+                        }
+                        showToast("Avisos salvos com sucesso!", "success");
+                    } else {
+                        console.error("Falha ao salvar avisos:", error);
+                        const detalhe = error && (error.code || error.message)
+                            ? ` (${error.code || error.message})`
+                            : "";
+                        showToast("Erro ao salvar avisos" + detalhe, "error");
+                    }
+                });
+            });
+
+            document.getElementById('btn-new-lem').addEventListener('click', () => {
+                openConfirmModal(
+                    "Novo Aviso",
+                    "Deseja iniciar um novo formulário de avisos?",
+                    () => {
+                        currentLemId = null;
+                        lemDateInput.value = new Date().toISOString().split('T')[0];
+                        initLemTable();
+                        showToast("Formulário limpo para novo aviso.", "success");
+                    }
+                );
+            });
+
+            document.getElementById('btn-clear-lem').addEventListener('click', () => {
+                openConfirmModal(
+                    "Limpar Campos",
+                    "Deseja apagar todos os campos da tabela de avisos atual?",
+                    () => {
+                        initLemTable();
+                        showToast("Campos de avisos limpos.", "success");
+                    }
+                );
+            });
+
+            document.getElementById('btn-print-lem').addEventListener('click', () => {
+                const dateVal = lemDateInput.value;
+                const formattedDate = dateVal ? dateVal.split('-').reverse().join('/') : 'Não informada';
+                document.getElementById('print-lem-header').innerHTML = `
+                    <strong>CONTROLE DE ORDEM DE COMPRAS - GERENCIAMENTO DE AVISOS</strong><br>
+                    Data do Aviso: ${formattedDate}
+                `;
+                window.print();
+            });
+
+            function renderLemHistory(lemList) {
+                const container = document.getElementById('lem-history-list');
+                if (!lemList || lemList.length === 0) {
+                    container.innerHTML = `<div class="empty-history">Nenhum aviso salvo no histórico.</div>`;
+                    return;
+                }
+
+                container.innerHTML = '';
+                lemList.slice().reverse().forEach(record => {
+                    const filledRows = record.items ? record.items.filter(i => i.fornecedor || i.avisar).length : 0;
+                    const formattedDate = record.date ? record.date.split('-').reverse().join('/') : (record.createdAt ? new Date(record.createdAt).toLocaleDateString('pt-BR') : 'Data inválida');
+
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'history-item';
+                    itemDiv.innerHTML = `
+                        <div class="history-info">
+                            <div class="history-date"><i class="fa-regular fa-calendar"></i> ${formattedDate}</div>
+                            <div class="history-meta">${filledRows} aviso(s) cadastrado(s)</div>
+                        </div>
+                        <div class="history-actions">
+                            <button class="btn btn-outline btn-sm" title="Editar" onclick="loadLembretes('${record.id}')">
+                                <i class="fa-solid fa-pen-to-square"></i> Editar
+                            </button>
+                            <button class="btn btn-danger-outline btn-sm" title="Excluir" onclick="confirmDeleteLembretes('${record.id}')">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </div>
+                    `;
+                    container.appendChild(itemDiv);
+                });
+            }
+
+            window.loadLembretes = function(id) {
+                const record = cachedLembretes.find(r => r.id === id);
+                if (!record) return;
+
+                currentLemId = record.id;
+                lemDateInput.value = record.date || (record.createdAt ? record.createdAt.split('T')[0] : '');
+                initLemTable(record.items);
+                showToast("Avisos carregados para edição.", "success");
+                document.getElementById('module-lembrete').scrollIntoView({ behavior: 'smooth' });
+            };
+
+            window.confirmDeleteLembretes = function(id) {
+                openConfirmModal(
+                    "Excluir Aviso",
+                    "Deseja realmente excluir este registro de avisos salvo?",
+                    () => {
+                        deleteLembreteRecord(id, (success) => {
+                            if (success) {
+                                if (currentLemId === id) {
+                                    currentLemId = null;
+                                    initLemTable();
+                                }
+                                showToast("Avisos excluídos com sucesso.", "success");
+                            } else {
+                                showToast("Erro ao excluir avisos.", "error");
+                            }
+                        });
+                    }
+                );
+            };
+
+            // --- AUTENTICAÇÃO E INICIALIZAÇÃO DOS DADOS ---
+            const authScreen = document.getElementById('auth-screen');
+            const authForm = document.getElementById('auth-form');
+            const authError = document.getElementById('auth-error');
+            const authSubmit = document.getElementById('auth-submit');
+            let dataListenersStarted = false;
+
+            function clearLoginFields() {
+                const emailField = document.getElementById('auth-email');
+                const passwordField = document.getElementById('auth-password');
+                if (emailField) emailField.value = '';
+                if (passwordField) passwordField.value = '';
+            }
+
+            function showAuthError(message) {
+                authError.textContent = message;
+                authError.style.display = 'block';
+            }
+
+            authForm.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                authError.style.display = 'none';
+                authSubmit.disabled = true;
+                authSubmit.textContent = 'Entrando...';
+                try {
+                    if (!auth) throw new Error('O Firebase Authentication não foi inicializado. Confira a configuração do projeto.');
+                    const email = document.getElementById('auth-email').value.trim();
+                    const password = document.getElementById('auth-password').value;
+                    await auth.signInWithEmailAndPassword(email, password);
+                    clearLoginFields();
+                } catch (error) {
+                    const messages = {
+                        'auth/invalid-email': 'O formato do e-mail é inválido.',
+                        'auth/user-disabled': 'Esta conta foi desativada.',
+                        'auth/user-not-found': 'Não existe usuário cadastrado com esse e-mail.',
+                        'auth/wrong-password': 'Senha incorreta. Confira a senha e tente novamente.',
+                        'auth/invalid-credential': 'E-mail ou senha incorretos.',
+                        'auth/too-many-requests': 'Muitas tentativas. Aguarde um pouco e tente novamente.',
+                        'auth/network-request-failed': 'Falha de conexão. Verifique a internet e tente novamente.'
+                    };
+                    showAuthError(messages[error.code] || `Não foi possível entrar: ${error.code || error.message || 'erro desconhecido'}`);
+                } finally {
+                    authSubmit.disabled = false;
+                    authSubmit.textContent = 'Entrar';
+                }
+            });
+
+            function addLogoutButton() {
+                if (document.getElementById('btn-logout')) return;
+                const badge = document.getElementById('sync-status-badge');
+                const button = document.createElement('button');
+                button.id = 'btn-logout';
+                button.type = 'button';
+                button.textContent = 'Sair';
+                button.addEventListener('click', async () => {
+                    try {
+                        await auth.signOut();
+                    } catch (e) {
+                        console.error('Erro ao sair:', e);
+                    } finally {
+                        clearLoginFields();
+                    }
+                });
+                badge.appendChild(button);
+            }
+
+            if (!auth) {
+                showAuthError('Firebase não foi inicializado. Confira a configuração do projeto.');
+            } else {
+                auth.onAuthStateChanged((user) => {
+                    if (!user) {
+                        document.body.classList.add('auth-locked');
+                        dataListenersStarted = false;
+                        clearLoginFields();
+                        authError.style.display = 'none';
+                        authSubmit.disabled = false;
+                        authSubmit.textContent = 'Entrar';
+                        return;
+                    }
+                    document.body.classList.remove('auth-locked');
+                    document.getElementById('sync-status-text').textContent = 'Autenticado';
+                    document.getElementById('sync-status-badge').title = `Conectado como ${user.email || 'usuário autenticado'}`;
+                    addLogoutButton();
+                    if (!dataListenersStarted) {
+                        dataListenersStarted = true;
+                        initRecTable();
+                        initLemTable();
+                        // Carrega o histórico e restaura o último formulário salvo em cada módulo.
+                        // O timestamp é prioritário; a data e a posição na lista servem como fallback
+                        // para registros antigos que ainda não tenham updatedAt.
+                        function getLatestSavedRecord(list) {
+                            if (!Array.isArray(list) || list.length === 0) return null;
+                            return list.map((record, index) => {
+                                const rawTime = record.updatedAt || record.createdAt || '';
+                                const parsedTime = Date.parse(rawTime);
+                                return {
+                                    record,
+                                    index,
+                                    timestamp: Number.isFinite(parsedTime) ? parsedTime : 0
+                                };
+                            }).sort((a, b) => {
+                                if (b.timestamp !== a.timestamp) return b.timestamp - a.timestamp;
+                                return b.index - a.index;
+                            })[0].record;
+                        }
+
+                        fetchRecebimentosData((list) => {
+                            renderRecHistory(list);
+                            const latestRecord = getLatestSavedRecord(list);
+                            if (latestRecord && latestRecord.id) {
+                                window.loadRecebimento(latestRecord.id);
+                            } else {
+                                currentRecId = null;
+                                initRecTable();
+                            }
+                        });
+
+                        fetchLembretesData((list) => {
+                            renderLemHistory(list);
+                            const latestRecord = getLatestSavedRecord(list);
+                            if (latestRecord && latestRecord.id) {
+                                window.loadLembretes(latestRecord.id);
+                            } else {
+                                currentLemId = null;
+                                initLemTable();
+                            }
+                        });
+                    }
+                });
+            }
+
+        });
+    </script>
+</body>
+</html>
